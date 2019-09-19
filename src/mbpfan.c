@@ -398,9 +398,9 @@ t_sensors *refresh_sensors(t_sensors *sensors)
 }
 
 /* Controls the speed of a fan */
-void set_fan_speed(t_fans* fan, int speed)
+void set_fan_speed(t_fans* fan, int speed, bool force_fan)
 {
-    if(fan != NULL && fan->file != NULL && fan->old_speed != speed) {
+    if(fan != NULL && fan->file != NULL && (force_fan || fan->old_speed != speed)) {
        char buf[16];
        int len = snprintf(buf, sizeof(buf), "%d", speed);
        int res = pwrite(fileno(fan->file), buf, len, /*offset=*/ 0);
@@ -416,7 +416,7 @@ void set_fan_minimum_speed(t_fans* fans)
    t_fans *tmp = fans;
 
    while(tmp != NULL) {
-      set_fan_speed(tmp,tmp->fan_min_speed); 
+      set_fan_speed(tmp,tmp->fan_min_speed, true); 
       tmp = tmp->next;
    }
 }
@@ -580,6 +580,8 @@ void mbpfan()
        fan = fan->next;
     }
 
+    bool force_fan = true;
+recalibrate:
     if(verbose) {
         printf("Sleeping for 2 seconds to get first temp delta\n");
 
@@ -626,7 +628,7 @@ void mbpfan()
                 }
 	    }
 
-	    set_fan_speed(fan, fan_speed);
+            set_fan_speed(fan, fan_speed, force_fan);
        	    fan = fan->next;
 	} 
 
@@ -639,11 +641,28 @@ void mbpfan()
             }
         }
    
+        time_t before_sleep = time(NULL);
+
         // call nanosleep instead of sleep to avoid rt_sigprocmask and
         // rt_sigaction
         struct timespec ts;
         ts.tv_sec = polling_interval;
         ts.tv_nsec = 0;
         nanosleep(&ts, NULL);
+
+        time_t after_sleep = time(NULL);
+        if(after_sleep - before_sleep > 2 * polling_interval) {
+            printf("Clock skew detected - slept for %ld seconds but expected %d\n", after_sleep - before_sleep, polling_interval);
+            fflush(stdout);
+
+            if(daemonize) {
+                syslog(LOG_INFO, "Sleeping for %d seconds", polling_interval);
+            }
+
+            force_fan = false;
+            goto recalibrate;
+        }
+
+        force_fan = false;
     }
 }

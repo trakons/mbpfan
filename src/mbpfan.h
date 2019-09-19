@@ -87,7 +87,7 @@ void set_fans_auto(t_fans *fans);
  * Given a sensors with associated fans
  * Change their speed
  */
-void set_fan_speed(t_fans* fan, int speed);
+void set_fan_speed(t_fans* fan, int speed, bool force_fan);
 
 /**
  * Given a list of fans set their minumum fan speed
